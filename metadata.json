@@ -1,0 +1,6 @@
+{
+  "name": "Corporate Budget Management System",
+  "description": "Enterprise Marketing & CX Budget Management System with PACL/PGIL Legal Entity Separation, Transaction Drill-Down & Traceability, 360-Degree Entity Dossiers, Financial Amount Reconciliation, and Context-Aware Gemini AI Financial Advisor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

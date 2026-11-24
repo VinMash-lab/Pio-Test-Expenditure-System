@@ -1,0 +1,1040 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== GLOBAL HARDENED HELPERS ====================
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'alvinmamo1995@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isStr(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isNonEmptyStr(val, maxLen) {
+      return val is string && val.size() > 0 && val.size() <= maxLen;
+    }
+
+    function isOptStr(data, key, maxLen) {
+      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptNum(data, key) {
+      return !(key in data) || data[key] == null || (data[key] is number);
+    }
+
+    function isOptBool(data, key) {
+      return !(key in data) || data[key] == null || (data[key] is bool);
+    }
+
+    function isOptStrList(data, key, maxItems, maxItemLen) {
+      return !(key in data) || data[key] == null || (
+        data[key] is list &&
+        data[key].size() <= maxItems &&
+        (data[key].size() == 0 || (data[key][0] is string && data[key][0].size() <= maxItemLen))
+      );
+    }
+
+    function isOptMapList(data, key, maxItems) {
+      return !(key in data) || data[key] == null || (
+        data[key] is list &&
+        data[key].size() <= maxItems &&
+        (data[key].size() == 0 || data[key][0] is map)
+      );
+    }
+
+    function hasSyncedTimestamp(data) {
+      return 'syncedAt' in data && data.syncedAt is timestamp && data.syncedAt == request.time;
+    }
+
+    // ==================== DOMAIN VALIDATION BLUEPRINTS ====================
+
+    function isValidBudget(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'code', 'financialYear', 'legalEntity',
+          'departmentId', 'departmentName', 'category', 'allocatedAmount',
+          'description', 'status', 'createdBy', 'createdDate', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'code', 'financialYear', 'legalEntity', 'quarter',
+          'departmentId', 'departmentName', 'projectId', 'projectName', 'campaign',
+          'strategicInitiative', 'category', 'costCentre', 'fundingSource', 'activity',
+          'allocatedAmount', 'revisedBudget', 'actualExpenditure', 'committedSpend',
+          'remainingBudget', 'utilizationPercent', 'notes', 'description', 'status',
+          'sharedGroupId', 'allocationMethod', 'paclSharePercent', 'pgilSharePercent',
+          'paclAllocation', 'pgilAllocation', 'createdBy', 'createdDate', 'updatedAt', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.code, 64) &&
+        isNonEmptyStr(data.financialYear, 16) &&
+        data.legalEntity in ['PACL', 'PGIL', 'Shared'] &&
+        isNonEmptyStr(data.departmentId, 128) &&
+        isNonEmptyStr(data.departmentName, 160) &&
+        isNonEmptyStr(data.category, 120) &&
+        data.allocatedAmount is number && data.allocatedAmount >= 0 &&
+        isStr(data.description, 1000) &&
+        data.status in ['Approved', 'Pending', 'Draft', 'Exceeded', 'Closed'] &&
+        isNonEmptyStr(data.createdBy, 128) &&
+        isNonEmptyStr(data.createdDate, 32) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'quarter', 16) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'campaign', 200) &&
+        isOptStr(data, 'strategicInitiative', 200) &&
+        isOptStr(data, 'costCentre', 120) &&
+        isOptStr(data, 'fundingSource', 120) &&
+        isOptStr(data, 'activity', 200) &&
+        isOptNum(data, 'revisedBudget') &&
+        isOptNum(data, 'actualExpenditure') &&
+        isOptNum(data, 'committedSpend') &&
+        isOptNum(data, 'remainingBudget') &&
+        isOptNum(data, 'utilizationPercent') &&
+        isOptStr(data, 'notes', 2000) &&
+        isOptStr(data, 'sharedGroupId', 128) &&
+        isOptStr(data, 'allocationMethod', 32) &&
+        isOptNum(data, 'paclSharePercent') &&
+        isOptNum(data, 'pgilSharePercent') &&
+        isOptNum(data, 'paclAllocation') &&
+        isOptNum(data, 'pgilAllocation') &&
+        isOptStr(data, 'updatedAt', 64);
+    }
+
+    function isValidExpenditure(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'expenseId', 'date', 'legalEntity', 'departmentId',
+          'departmentName', 'supplierId', 'supplierName', 'category', 'description',
+          'amount', 'vatAmount', 'totalAmount', 'paymentStatus', 'createdBy', 'createdAt', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'expenseId', 'date', 'expenseDate', 'paymentMethod',
+          'legalEntity', 'quarter', 'departmentId', 'departmentName', 'budgetId',
+          'projectId', 'projectName', 'campaignName', 'strategicInitiative', 'costCentre',
+          'fundingSource', 'activity', 'supplierId', 'supplierName', 'category',
+          'description', 'invoiceNumber', 'purchaseOrder', 'amount', 'vatAmount',
+          'totalAmount', 'paymentStatus', 'sharedGroupId', 'allocationMethod',
+          'paclSharePercent', 'pgilSharePercent', 'receiptFileName', 'receiptFileUrl',
+          'remarks', 'isBudgetExceeded', 'requiresAuthorization', 'authorizedBy',
+          'createdBy', 'createdAt', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.expenseId, 64) &&
+        isNonEmptyStr(data.date, 32) &&
+        data.legalEntity in ['PACL', 'PGIL'] &&
+        isNonEmptyStr(data.departmentId, 128) &&
+        isNonEmptyStr(data.departmentName, 160) &&
+        isNonEmptyStr(data.supplierId, 128) &&
+        isNonEmptyStr(data.supplierName, 200) &&
+        isNonEmptyStr(data.category, 120) &&
+        isStr(data.description, 1000) &&
+        data.amount is number && data.amount >= 0 &&
+        data.vatAmount is number && data.vatAmount >= 0 &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        data.paymentStatus in ['Paid', 'Pending Approval', 'Rejected', 'Approved'] &&
+        isNonEmptyStr(data.createdBy, 128) &&
+        isNonEmptyStr(data.createdAt, 64) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'expenseDate', 32) &&
+        isOptStr(data, 'paymentMethod', 64) &&
+        isOptStr(data, 'quarter', 16) &&
+        isOptStr(data, 'budgetId', 128) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'campaignName', 200) &&
+        isOptStr(data, 'strategicInitiative', 200) &&
+        isOptStr(data, 'costCentre', 120) &&
+        isOptStr(data, 'fundingSource', 120) &&
+        isOptStr(data, 'activity', 200) &&
+        isOptStr(data, 'invoiceNumber', 64) &&
+        isOptStr(data, 'purchaseOrder', 64) &&
+        isOptStr(data, 'sharedGroupId', 128) &&
+        isOptStr(data, 'allocationMethod', 32) &&
+        isOptNum(data, 'paclSharePercent') &&
+        isOptNum(data, 'pgilSharePercent') &&
+        isOptStr(data, 'receiptFileName', 255) &&
+        isOptStr(data, 'receiptFileUrl', 2048) &&
+        isOptStr(data, 'remarks', 1000) &&
+        isOptBool(data, 'isBudgetExceeded') &&
+        isOptBool(data, 'requiresAuthorization') &&
+        isOptStr(data, 'authorizedBy', 128);
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'code', 'name', 'projectType', 'paclApplicable',
+          'pgilApplicable', 'departmentId', 'departmentName', 'projectManager',
+          'startDate', 'endDate', 'status', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'code', 'name', 'projectType', 'entity', 'paclApplicable',
+          'pgilApplicable', 'departmentId', 'departmentName', 'budgetCategory',
+          'strategicInitiative', 'campaignType', 'costCentre', 'fundingSource',
+          'targetAudience', 'expectedROI', 'kpiTarget', 'projectOwner', 'projectManager',
+          'vendor', 'vendorId', 'startDate', 'expectedCompletionDate', 'actualCompletionDate',
+          'endDate', 'description', 'status', 'originalBudget', 'approvedBudget',
+          'revisedBudget', 'budget', 'spent', 'actualSpend', 'committedSpend', 'remaining',
+          'remainingBudget', 'utilizationPercent', 'progressPercent', 'totalBudget',
+          'paclAllocation', 'pgilAllocation', 'paclActual', 'pgilActual', 'notes',
+          'attachedDocuments', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.code, 64) &&
+        isNonEmptyStr(data.name, 200) &&
+        isNonEmptyStr(data.projectType, 64) &&
+        data.paclApplicable is bool &&
+        data.pgilApplicable is bool &&
+        isNonEmptyStr(data.departmentId, 128) &&
+        isNonEmptyStr(data.departmentName, 160) &&
+        isNonEmptyStr(data.projectManager, 128) &&
+        isNonEmptyStr(data.startDate, 32) &&
+        isNonEmptyStr(data.endDate, 32) &&
+        isNonEmptyStr(data.status, 32) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'entity', 16) &&
+        isOptStr(data, 'budgetCategory', 120) &&
+        isOptStr(data, 'strategicInitiative', 200) &&
+        isOptStr(data, 'campaignType', 120) &&
+        isOptStr(data, 'costCentre', 120) &&
+        isOptStr(data, 'fundingSource', 120) &&
+        isOptStr(data, 'targetAudience', 200) &&
+        isOptStr(data, 'expectedROI', 200) &&
+        isOptStr(data, 'kpiTarget', 200) &&
+        isOptStr(data, 'projectOwner', 128) &&
+        isOptStr(data, 'vendor', 200) &&
+        isOptStr(data, 'vendorId', 128) &&
+        isOptStr(data, 'expectedCompletionDate', 32) &&
+        isOptStr(data, 'actualCompletionDate', 32) &&
+        isOptStr(data, 'description', 2000) &&
+        isOptNum(data, 'originalBudget') &&
+        isOptNum(data, 'approvedBudget') &&
+        isOptNum(data, 'revisedBudget') &&
+        isOptNum(data, 'budget') &&
+        isOptNum(data, 'spent') &&
+        isOptNum(data, 'actualSpend') &&
+        isOptNum(data, 'committedSpend') &&
+        isOptNum(data, 'remaining') &&
+        isOptNum(data, 'remainingBudget') &&
+        isOptNum(data, 'utilizationPercent') &&
+        isOptNum(data, 'progressPercent') &&
+        isOptNum(data, 'totalBudget') &&
+        isOptNum(data, 'paclAllocation') &&
+        isOptNum(data, 'pgilAllocation') &&
+        isOptNum(data, 'paclActual') &&
+        isOptNum(data, 'pgilActual') &&
+        isOptStr(data, 'notes', 2000) &&
+        isOptStrList(data, 'attachedDocuments', 25, 255);
+    }
+
+    function isValidSupplier(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'name', 'contactPerson', 'phone', 'email',
+          'pin', 'address', 'servicesOffered', 'status', 'totalPaid', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'name', 'contactPerson', 'phone', 'email', 'pin',
+          'address', 'servicesOffered', 'status', 'totalPaid', 'rating', 'category', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.name, 200) &&
+        isStr(data.contactPerson, 160) &&
+        isStr(data.phone, 64) &&
+        isStr(data.email, 160) &&
+        isStr(data.pin, 32) &&
+        isStr(data.address, 300) &&
+        data.servicesOffered is list && data.servicesOffered.size() <= 25 &&
+        (data.servicesOffered.size() == 0 || (data.servicesOffered[0] is string && data.servicesOffered[0].size() <= 120)) &&
+        data.status in ['Active', 'Inactive', 'Preferred'] &&
+        data.totalPaid is number && data.totalPaid >= 0 &&
+        hasSyncedTimestamp(data) &&
+        isOptNum(data, 'rating') &&
+        isOptStr(data, 'category', 120);
+    }
+
+    function isValidLPO(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'lpoNumber', 'lpoDate', 'legalEntity', 'supplierId',
+          'supplierName', 'description', 'lpoAmount', 'vatAmount', 'totalLpoValue',
+          'currency', 'lpoStatus', 'invoiceStatus', 'paymentStatus', 'createdBy',
+          'createdAt', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'lpoNumber', 'lpoDate', 'legalEntity', 'supplierId',
+          'supplierName', 'projectId', 'projectName', 'budgetId', 'budgetCode',
+          'budgetCategory', 'departmentId', 'departmentName', 'description',
+          'lpoAmount', 'amountBeforeVat', 'vatAmount', 'totalLpoValue', 'totalLpoAmount',
+          'currency', 'lpoStatus', 'status', 'expectedDeliveryDate', 'invoiceStatus',
+          'paymentStatus', 'relatedInvoice', 'documentId', 'documentFileName',
+          'documentDataUrl', 'remarks', 'createdBy', 'createdAt', 'updatedAt', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.lpoNumber, 80) &&
+        isNonEmptyStr(data.lpoDate, 32) &&
+        data.legalEntity in ['PACL', 'PGIL'] &&
+        isNonEmptyStr(data.supplierId, 128) &&
+        isNonEmptyStr(data.supplierName, 200) &&
+        isStr(data.description, 1000) &&
+        data.lpoAmount is number && data.lpoAmount >= 0 &&
+        data.vatAmount is number && data.vatAmount >= 0 &&
+        data.totalLpoValue is number && data.totalLpoValue >= 0 &&
+        isNonEmptyStr(data.currency, 16) &&
+        isNonEmptyStr(data.lpoStatus, 32) &&
+        isNonEmptyStr(data.invoiceStatus, 32) &&
+        isNonEmptyStr(data.paymentStatus, 32) &&
+        isNonEmptyStr(data.createdBy, 128) &&
+        isNonEmptyStr(data.createdAt, 64) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'budgetId', 128) &&
+        isOptStr(data, 'budgetCode', 64) &&
+        isOptStr(data, 'budgetCategory', 120) &&
+        isOptStr(data, 'departmentId', 128) &&
+        isOptStr(data, 'departmentName', 160) &&
+        isOptNum(data, 'amountBeforeVat') &&
+        isOptNum(data, 'totalLpoAmount') &&
+        isOptStr(data, 'status', 32) &&
+        isOptStr(data, 'expectedDeliveryDate', 32) &&
+        isOptStr(data, 'relatedInvoice', 80) &&
+        isOptStr(data, 'documentId', 128) &&
+        isOptStr(data, 'documentFileName', 255) &&
+        isOptStr(data, 'documentDataUrl', 2048) &&
+        isOptStr(data, 'remarks', 1000) &&
+        isOptStr(data, 'updatedAt', 64);
+    }
+
+    function isValidDocument(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'title', 'type', 'departmentName', 'fileName',
+          'fileSize', 'fileType', 'uploadedBy', 'uploadDate', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'docNumber', 'title', 'type', 'category',
+          'departmentId', 'departmentName', 'legalEntity', 'projectId', 'projectName',
+          'budgetId', 'budgetCode', 'expenditureId', 'expenseCode', 'supplierId',
+          'supplierName', 'lpoId', 'lpoNumber', 'fileName', 'fileSize', 'fileType',
+          'mimeType', 'dataUrl', 'uploadedBy', 'uploadDate', 'downloadUrl', 'status',
+          'currentVersion', 'versions', 'activityLog', 'remarks', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.title, 200) &&
+        isNonEmptyStr(data.type, 80) &&
+        isNonEmptyStr(data.departmentName, 160) &&
+        isNonEmptyStr(data.fileName, 255) &&
+        isNonEmptyStr(data.fileSize, 32) &&
+        data.fileType in ['pdf', 'doc', 'xls', 'image', 'other'] &&
+        isNonEmptyStr(data.uploadedBy, 128) &&
+        isNonEmptyStr(data.uploadDate, 32) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'docNumber', 80) &&
+        isOptStr(data, 'category', 80) &&
+        isOptStr(data, 'departmentId', 128) &&
+        isOptStr(data, 'legalEntity', 16) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'budgetId', 128) &&
+        isOptStr(data, 'budgetCode', 64) &&
+        isOptStr(data, 'expenditureId', 128) &&
+        isOptStr(data, 'expenseCode', 64) &&
+        isOptStr(data, 'supplierId', 128) &&
+        isOptStr(data, 'supplierName', 200) &&
+        isOptStr(data, 'lpoId', 128) &&
+        isOptStr(data, 'lpoNumber', 80) &&
+        isOptStr(data, 'mimeType', 128) &&
+        isOptStr(data, 'dataUrl', 200000) &&
+        isOptStr(data, 'downloadUrl', 2048) &&
+        isOptStr(data, 'status', 32) &&
+        isOptNum(data, 'currentVersion') &&
+        isOptMapList(data, 'versions', 20) &&
+        isOptMapList(data, 'activityLog', 50) &&
+        isOptStr(data, 'remarks', 1000);
+    }
+
+    function isValidQuotation(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'quotationNumber', 'vendorName', 'quotationDate',
+          'totalAmount', 'currency', 'status', 'description', 'createdBy',
+          'createdAt', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'quotationNumber', 'vendorId', 'vendorName',
+          'supplierId', 'supplierName', 'projectId', 'projectName', 'legalEntity',
+          'quotationDate', 'validUntil', 'amountBeforeVat', 'vatAmount', 'totalAmount',
+          'currency', 'status', 'description', 'items', 'documentId',
+          'documentFileName', 'documentDataUrl', 'remarks', 'createdBy',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.quotationNumber, 80) &&
+        isNonEmptyStr(data.vendorName, 200) &&
+        isNonEmptyStr(data.quotationDate, 32) &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        isNonEmptyStr(data.currency, 16) &&
+        isNonEmptyStr(data.status, 32) &&
+        isStr(data.description, 1000) &&
+        isNonEmptyStr(data.createdBy, 128) &&
+        isNonEmptyStr(data.createdAt, 64) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'vendorId', 128) &&
+        isOptStr(data, 'supplierId', 128) &&
+        isOptStr(data, 'supplierName', 200) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'legalEntity', 16) &&
+        isOptStr(data, 'validUntil', 32) &&
+        isOptNum(data, 'amountBeforeVat') &&
+        isOptNum(data, 'vatAmount') &&
+        isOptMapList(data, 'items', 50) &&
+        isOptStr(data, 'documentId', 128) &&
+        isOptStr(data, 'documentFileName', 255) &&
+        isOptStr(data, 'documentDataUrl', 2048) &&
+        isOptStr(data, 'remarks', 1000) &&
+        isOptStr(data, 'updatedAt', 64);
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'invoiceNumber', 'vendorId', 'vendorName', 'legalEntity',
+          'invoiceDate', 'amountBeforeVat', 'vatAmount', 'totalAmount', 'currency',
+          'paymentStatus', 'description', 'createdBy', 'createdAt', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'invoiceNumber', 'vendorId', 'vendorName', 'supplierId',
+          'supplierName', 'lpoNumber', 'lpoId', 'projectId', 'projectName',
+          'legalEntity', 'invoiceDate', 'dueDate', 'amountBeforeVat', 'vatAmount',
+          'totalAmount', 'currency', 'paymentStatus', 'paymentDate', 'description',
+          'notes', 'documentId', 'documentFileName', 'documentDataUrl', 'remarks',
+          'createdBy', 'createdAt', 'updatedAt', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.invoiceNumber, 80) &&
+        isNonEmptyStr(data.vendorId, 128) &&
+        isNonEmptyStr(data.vendorName, 200) &&
+        isNonEmptyStr(data.legalEntity, 16) &&
+        isNonEmptyStr(data.invoiceDate, 32) &&
+        data.amountBeforeVat is number && data.amountBeforeVat >= 0 &&
+        data.vatAmount is number && data.vatAmount >= 0 &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        isNonEmptyStr(data.currency, 16) &&
+        isNonEmptyStr(data.paymentStatus, 32) &&
+        isStr(data.description, 1000) &&
+        isNonEmptyStr(data.createdBy, 128) &&
+        isNonEmptyStr(data.createdAt, 64) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'supplierId', 128) &&
+        isOptStr(data, 'supplierName', 200) &&
+        isOptStr(data, 'lpoNumber', 80) &&
+        isOptStr(data, 'lpoId', 128) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'dueDate', 32) &&
+        isOptStr(data, 'paymentDate', 32) &&
+        isOptStr(data, 'notes', 1000) &&
+        isOptStr(data, 'documentId', 128) &&
+        isOptStr(data, 'documentFileName', 255) &&
+        isOptStr(data, 'documentDataUrl', 2048) &&
+        isOptStr(data, 'remarks', 1000) &&
+        isOptStr(data, 'updatedAt', 64);
+    }
+
+    function isValidPaymentRequest(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'requestNumber', 'legalEntity', 'requestedAmount',
+          'currency', 'purpose', 'status', 'createdBy', 'createdAt', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'requestNumber', 'vendorId', 'vendorName', 'supplierId',
+          'supplierName', 'lpoNumber', 'invoiceNumber', 'invoiceId', 'paymentMethod',
+          'bankDetails', 'requesterName', 'projectId', 'projectName', 'legalEntity',
+          'requestedAmount', 'requestDate', 'vatAmount', 'totalAmount', 'currency',
+          'purpose', 'priority', 'status', 'paymentDate', 'paymentVoucherFileName',
+          'approvedBy', 'approvalDate', 'documentId', 'documentFileName',
+          'documentDataUrl', 'remarks', 'createdBy', 'createdAt', 'updatedAt', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.requestNumber, 80) &&
+        isNonEmptyStr(data.legalEntity, 16) &&
+        data.requestedAmount is number && data.requestedAmount >= 0 &&
+        isNonEmptyStr(data.currency, 16) &&
+        isStr(data.purpose, 1000) &&
+        isNonEmptyStr(data.status, 32) &&
+        isNonEmptyStr(data.createdBy, 128) &&
+        isNonEmptyStr(data.createdAt, 64) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'vendorId', 128) &&
+        isOptStr(data, 'vendorName', 200) &&
+        isOptStr(data, 'supplierId', 128) &&
+        isOptStr(data, 'supplierName', 200) &&
+        isOptStr(data, 'lpoNumber', 80) &&
+        isOptStr(data, 'invoiceNumber', 80) &&
+        isOptStr(data, 'invoiceId', 128) &&
+        isOptStr(data, 'paymentMethod', 64) &&
+        isOptStr(data, 'bankDetails', 300) &&
+        isOptStr(data, 'requesterName', 128) &&
+        isOptStr(data, 'projectId', 128) &&
+        isOptStr(data, 'projectName', 200) &&
+        isOptStr(data, 'requestDate', 32) &&
+        isOptNum(data, 'vatAmount') &&
+        isOptNum(data, 'totalAmount') &&
+        isOptStr(data, 'priority', 32) &&
+        isOptStr(data, 'paymentDate', 32) &&
+        isOptStr(data, 'paymentVoucherFileName', 255) &&
+        isOptStr(data, 'approvedBy', 128) &&
+        isOptStr(data, 'approvalDate', 32) &&
+        isOptStr(data, 'documentId', 128) &&
+        isOptStr(data, 'documentFileName', 255) &&
+        isOptStr(data, 'documentDataUrl', 2048) &&
+        isOptStr(data, 'remarks', 1000) &&
+        isOptStr(data, 'updatedAt', 64);
+    }
+
+    function isValidDepartment(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'code', 'name', 'headOfDepartment',
+          'allocatedBudget', 'totalSpent', 'headcount', 'description', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'code', 'name', 'headOfDepartment', 'allocatedBudget',
+          'totalSpent', 'headcount', 'description', 'costCentres', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.code, 32) &&
+        isNonEmptyStr(data.name, 160) &&
+        isStr(data.headOfDepartment, 128) &&
+        data.allocatedBudget is number && data.allocatedBudget >= 0 &&
+        data.totalSpent is number && data.totalSpent >= 0 &&
+        data.headcount is number && data.headcount >= 0 &&
+        isStr(data.description, 1000) &&
+        hasSyncedTimestamp(data) &&
+        isOptStrList(data, 'costCentres', 25, 120);
+    }
+
+    function isValidImportHistory(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'fileName', 'dataType', 'dateImported',
+          'totalRecords', 'successfulRecords', 'failedRecords', 'importedBy', 'status', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'fileName', 'dataType', 'dateImported',
+          'totalRecords', 'successfulRecords', 'failedRecords', 'importedBy', 'status', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.fileName, 255) &&
+        isNonEmptyStr(data.dataType, 32) &&
+        isNonEmptyStr(data.dateImported, 64) &&
+        data.totalRecords is number && data.totalRecords >= 0 &&
+        data.successfulRecords is number && data.successfulRecords >= 0 &&
+        data.failedRecords is number && data.failedRecords >= 0 &&
+        isNonEmptyStr(data.importedBy, 128) &&
+        data.status in ['Successful', 'Partial Success', 'Failed'] &&
+        hasSyncedTimestamp(data);
+    }
+
+    function isValidAuditTrail(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'action', 'entity', 'details',
+          'performedBy', 'userRole', 'timestamp', 'ipAddress', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'action', 'entity', 'entityId', 'details',
+          'performedBy', 'userRole', 'timestamp', 'ipAddress', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.action, 64) &&
+        isNonEmptyStr(data.entity, 64) &&
+        isOptStr(data, 'entityId', 128) &&
+        isNonEmptyStr(data.details, 1000) &&
+        isNonEmptyStr(data.performedBy, 128) &&
+        isNonEmptyStr(data.userRole, 64) &&
+        isNonEmptyStr(data.timestamp, 64) &&
+        isStr(data.ipAddress, 64) &&
+        hasSyncedTimestamp(data);
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'type', 'title', 'message',
+          'timestamp', 'isRead', 'severity', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'type', 'title', 'message', 'timestamp',
+          'isRead', 'relatedEntityId', 'severity', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.type, 32) &&
+        isNonEmptyStr(data.title, 200) &&
+        isNonEmptyStr(data.message, 1000) &&
+        isNonEmptyStr(data.timestamp, 64) &&
+        data.isRead is bool &&
+        data.severity in ['info', 'warning', 'danger', 'success'] &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'relatedEntityId', 128);
+    }
+
+    function isValidArchiveItem(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'originalId', 'itemType', 'itemTitle',
+          'archivedBy', 'archivedAt', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'originalId', 'entityType', 'entityId', 'itemType',
+          'itemTitle', 'description', 'legalEntity', 'financialYear', 'archivedBy',
+          'archivedAt', 'deletedBy', 'deletedAt', 'reason', 'dataPayload', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.originalId, 128) &&
+        isNonEmptyStr(data.itemType, 32) &&
+        isNonEmptyStr(data.itemTitle, 200) &&
+        isNonEmptyStr(data.archivedBy, 128) &&
+        isNonEmptyStr(data.archivedAt, 64) &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'entityType', 32) &&
+        isOptStr(data, 'entityId', 128) &&
+        isOptStr(data, 'description', 500) &&
+        isOptStr(data, 'legalEntity', 32) &&
+        isOptStr(data, 'financialYear', 16) &&
+        isOptStr(data, 'deletedBy', 128) &&
+        isOptStr(data, 'deletedAt', 64) &&
+        isOptStr(data, 'reason', 500) &&
+        (!('dataPayload' in data) || data.dataPayload == null || data.dataPayload is map);
+    }
+
+    function isValidOfficialManual(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'version', 'title', 'lastUpdated', 'uploadedBy',
+          'fileType', 'fileName', 'fileSize', 'isOfficial', 'syncedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'ownerId', 'version', 'title', 'lastUpdated', 'uploadedBy',
+          'fileType', 'fileName', 'fileSize', 'downloadUrl', 'dataUrl',
+          'isOfficial', 'notes', 'syncedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.ownerId) &&
+        isNonEmptyStr(data.version, 32) &&
+        isNonEmptyStr(data.title, 200) &&
+        isNonEmptyStr(data.lastUpdated, 32) &&
+        isNonEmptyStr(data.uploadedBy, 128) &&
+        data.fileType in ['pdf', 'docx'] &&
+        isNonEmptyStr(data.fileName, 255) &&
+        isNonEmptyStr(data.fileSize, 32) &&
+        data.isOfficial is bool &&
+        hasSyncedTimestamp(data) &&
+        isOptStr(data, 'downloadUrl', 2048) &&
+        isOptStr(data, 'dataUrl', 200000) &&
+        isOptStr(data, 'notes', 1000);
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['id', 'uid', 'name', 'role', 'status', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'uid', 'name', 'role', 'department', 'departmentId',
+          'departmentName', 'status', 'avatarUrl', 'lastLogin', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.uid) &&
+        isNonEmptyStr(data.name, 160) &&
+        data.role in [
+          'Administrator', 'Marketing & CX Manager', 'Budget Officer', 'Viewer',
+          'Management', 'Market Research & Insights Lead', 'Marketing Director',
+          'Finance Manager', 'Campaign Manager', 'Read Only'
+        ] &&
+        data.status in ['Active', 'Inactive'] &&
+        data.createdAt is timestamp &&
+        isOptStr(data, 'department', 160) &&
+        isOptStr(data, 'departmentId', 128) &&
+        isOptStr(data, 'departmentName', 160) &&
+        isOptStr(data, 'avatarUrl', 2048) &&
+        isOptStr(data, 'lastLogin', 64) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['id', 'email', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'email', 'phone', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isNonEmptyStr(data.email, 160) &&
+        isOptStr(data, 'phone', 64) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'grantedBy', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'grantedBy', 'createdAt']) &&
+        isValidId(data.uid) &&
+        isNonEmptyStr(data.email, 160) &&
+        isNonEmptyStr(data.grantedBy, 128) &&
+        data.createdAt is timestamp;
+    }
+
+    // ==================== COLLECTION MATCH BLOCKS ====================
+
+    // Connectivity health probe document
+    match /test/{docId} {
+      allow get: if isVerified() && isValidId(docId);
+      allow list, write: if false;
+    }
+
+    // Trusted Admin Registry
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isAdmin() && isValidId(adminId) && isValidAdminUser(incoming()) && incoming().uid == adminId && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(adminId) && isValidAdminUser(incoming()) && incoming().uid == existing().uid && incoming().createdAt == existing().createdAt && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'grantedBy']);
+      allow delete: if isBootstrappedAdmin() && isValidId(adminId);
+    }
+
+    // Non-PII User Profiles & Isolated PII Subcollection (Pillar 6)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) &&
+        incoming().id == userId && incoming().uid == userId && incoming().createdAt == request.time && (
+          isAdmin() ||
+          (userId == request.auth.uid && incoming().role == 'Read Only' && incoming().status == 'Active')
+        );
+      allow update: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) &&
+        incoming().id == existing().id && incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        'updatedAt' in incoming() && incoming().updatedAt == request.time && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'role', 'department', 'departmentId', 'departmentName', 'status', 'avatarUrl', 'lastLogin', 'updatedAt'
+          ])) ||
+          (isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().status == existing().status &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'department', 'departmentId', 'departmentName', 'avatarUrl', 'lastLogin', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isBootstrappedAdmin());
+        allow create: if (isOwner(userId) || isAdmin()) && isValidId(userId) && isValidId(docId) &&
+          isValidUserPrivateInfo(incoming()) && incoming().id == docId && incoming().updatedAt == request.time;
+        allow update: if (isOwner(userId) || isAdmin()) && isValidId(userId) && isValidId(docId) &&
+          isValidUserPrivateInfo(incoming()) && incoming().id == existing().id &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'updatedAt']);
+        allow delete: if isAdmin() && isValidId(userId) && isValidId(docId);
+      }
+    }
+
+    // Budgets Collection
+    match /budgets/{budgetId} {
+      allow get: if isValidId(budgetId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(budgetId) && isValidBudget(incoming()) &&
+        incoming().id == budgetId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(budgetId) && isValidBudget(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'code', 'financialYear', 'legalEntity', 'quarter', 'departmentId', 'departmentName',
+          'projectId', 'projectName', 'campaign', 'strategicInitiative', 'category', 'costCentre',
+          'fundingSource', 'activity', 'allocatedAmount', 'revisedBudget', 'actualExpenditure',
+          'committedSpend', 'remainingBudget', 'utilizationPercent', 'notes', 'description',
+          'status', 'sharedGroupId', 'allocationMethod', 'paclSharePercent', 'pgilSharePercent',
+          'paclAllocation', 'pgilAllocation', 'updatedAt', 'syncedAt'
+        ]);
+      allow delete: if isValidId(budgetId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Expenditures Collection
+    match /expenditures/{expenditureId} {
+      allow get: if isValidId(expenditureId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(expenditureId) && isValidExpenditure(incoming()) &&
+        incoming().id == expenditureId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(expenditureId) && isValidExpenditure(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'expenseId', 'date', 'expenseDate', 'paymentMethod', 'legalEntity', 'quarter',
+          'departmentId', 'departmentName', 'budgetId', 'projectId', 'projectName',
+          'campaignName', 'strategicInitiative', 'costCentre', 'fundingSource', 'activity',
+          'supplierId', 'supplierName', 'category', 'description', 'invoiceNumber',
+          'purchaseOrder', 'amount', 'vatAmount', 'totalAmount', 'paymentStatus',
+          'sharedGroupId', 'allocationMethod', 'paclSharePercent', 'pgilSharePercent',
+          'receiptFileName', 'receiptFileUrl', 'remarks', 'isBudgetExceeded',
+          'requiresAuthorization', 'authorizedBy', 'syncedAt'
+        ]);
+      allow delete: if isValidId(expenditureId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Projects Collection
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(projectId) && isValidProject(incoming()) &&
+        incoming().id == projectId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(projectId) && isValidProject(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'code', 'name', 'projectType', 'entity', 'paclApplicable', 'pgilApplicable',
+          'departmentId', 'departmentName', 'budgetCategory', 'strategicInitiative',
+          'campaignType', 'costCentre', 'fundingSource', 'targetAudience', 'expectedROI',
+          'kpiTarget', 'projectOwner', 'projectManager', 'vendor', 'vendorId', 'startDate',
+          'expectedCompletionDate', 'actualCompletionDate', 'endDate', 'description',
+          'status', 'originalBudget', 'approvedBudget', 'revisedBudget', 'budget', 'spent',
+          'actualSpend', 'committedSpend', 'remaining', 'remainingBudget',
+          'utilizationPercent', 'progressPercent', 'totalBudget', 'paclAllocation',
+          'pgilAllocation', 'paclActual', 'pgilActual', 'notes', 'attachedDocuments', 'syncedAt'
+        ]);
+      allow delete: if isValidId(projectId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Suppliers Collection
+    match /suppliers/{supplierId} {
+      allow get: if isValidId(supplierId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(supplierId) && isValidSupplier(incoming()) &&
+        incoming().id == supplierId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(supplierId) && isValidSupplier(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'contactPerson', 'phone', 'email', 'pin', 'address',
+          'servicesOffered', 'status', 'totalPaid', 'rating', 'category', 'syncedAt'
+        ]);
+      allow delete: if isValidId(supplierId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // LPOs Collection
+    match /lpos/{lpoId} {
+      allow get: if isValidId(lpoId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(lpoId) && isValidLPO(incoming()) &&
+        incoming().id == lpoId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(lpoId) && isValidLPO(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'lpoNumber', 'lpoDate', 'legalEntity', 'supplierId', 'supplierName',
+          'projectId', 'projectName', 'budgetId', 'budgetCode', 'budgetCategory',
+          'departmentId', 'departmentName', 'description', 'lpoAmount', 'amountBeforeVat',
+          'vatAmount', 'totalLpoValue', 'totalLpoAmount', 'currency', 'lpoStatus',
+          'status', 'expectedDeliveryDate', 'invoiceStatus', 'paymentStatus',
+          'relatedInvoice', 'documentId', 'documentFileName', 'documentDataUrl',
+          'remarks', 'updatedAt', 'syncedAt'
+        ]);
+      allow delete: if isValidId(lpoId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Documents Collection
+    match /documents/{documentId} {
+      allow get: if isValidId(documentId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(documentId) && isValidDocument(incoming()) &&
+        incoming().id == documentId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(documentId) && isValidDocument(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'docNumber', 'title', 'type', 'category', 'departmentId', 'departmentName',
+          'legalEntity', 'projectId', 'projectName', 'budgetId', 'budgetCode',
+          'expenditureId', 'expenseCode', 'supplierId', 'supplierName', 'lpoId',
+          'lpoNumber', 'fileName', 'fileSize', 'fileType', 'mimeType', 'dataUrl',
+          'uploadedBy', 'uploadDate', 'downloadUrl', 'status', 'currentVersion',
+          'versions', 'activityLog', 'remarks', 'syncedAt'
+        ]);
+      allow delete: if isValidId(documentId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Quotations Collection
+    match /quotations/{quotationId} {
+      allow get: if isValidId(quotationId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(quotationId) && isValidQuotation(incoming()) &&
+        incoming().id == quotationId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(quotationId) && isValidQuotation(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'quotationNumber', 'vendorId', 'vendorName', 'supplierId', 'supplierName',
+          'projectId', 'projectName', 'legalEntity', 'quotationDate', 'validUntil',
+          'amountBeforeVat', 'vatAmount', 'totalAmount', 'currency', 'status',
+          'description', 'items', 'documentId', 'documentFileName', 'documentDataUrl',
+          'remarks', 'updatedAt', 'syncedAt'
+        ]);
+      allow delete: if isValidId(quotationId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Invoices Collection
+    match /invoices/{invoiceId} {
+      allow get: if isValidId(invoiceId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(invoiceId) && isValidInvoice(incoming()) &&
+        incoming().id == invoiceId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(invoiceId) && isValidInvoice(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'invoiceNumber', 'vendorId', 'vendorName', 'supplierId', 'supplierName',
+          'lpoNumber', 'lpoId', 'projectId', 'projectName', 'legalEntity',
+          'invoiceDate', 'dueDate', 'amountBeforeVat', 'vatAmount', 'totalAmount',
+          'currency', 'paymentStatus', 'paymentDate', 'description', 'notes',
+          'documentId', 'documentFileName', 'documentDataUrl', 'remarks', 'updatedAt', 'syncedAt'
+        ]);
+      allow delete: if isValidId(invoiceId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Payment Requests Collection
+    match /paymentRequests/{paymentRequestId} {
+      allow get: if isValidId(paymentRequestId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(paymentRequestId) && isValidPaymentRequest(incoming()) &&
+        incoming().id == paymentRequestId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(paymentRequestId) && isValidPaymentRequest(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'requestNumber', 'vendorId', 'vendorName', 'supplierId', 'supplierName',
+          'lpoNumber', 'invoiceNumber', 'invoiceId', 'paymentMethod', 'bankDetails',
+          'requesterName', 'projectId', 'projectName', 'legalEntity', 'requestedAmount',
+          'requestDate', 'vatAmount', 'totalAmount', 'currency', 'purpose', 'priority',
+          'status', 'paymentDate', 'paymentVoucherFileName', 'approvedBy', 'approvalDate',
+          'documentId', 'documentFileName', 'documentDataUrl', 'remarks', 'updatedAt', 'syncedAt'
+        ]);
+      allow delete: if isValidId(paymentRequestId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Departments Collection
+    match /departments/{departmentId} {
+      allow get: if isValidId(departmentId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(departmentId) && isValidDepartment(incoming()) &&
+        incoming().id == departmentId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(departmentId) && isValidDepartment(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'code', 'name', 'headOfDepartment', 'allocatedBudget',
+          'totalSpent', 'headcount', 'description', 'costCentres', 'syncedAt'
+        ]);
+      allow delete: if isValidId(departmentId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Import History Collection
+    match /importHistory/{importId} {
+      allow get: if isValidId(importId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(importId) && isValidImportHistory(incoming()) &&
+        incoming().id == importId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(importId) && isValidImportHistory(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'fileName', 'dataType', 'dateImported', 'totalRecords',
+          'successfulRecords', 'failedRecords', 'importedBy', 'status', 'syncedAt'
+        ]);
+      allow delete: if isValidId(importId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Audit Trail Collection (Strictly Append-Only / Immutable)
+    match /auditTrail/{auditId} {
+      allow get: if isValidId(auditId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(auditId) && isValidAuditTrail(incoming()) &&
+        incoming().id == auditId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update, delete: if false;
+    }
+
+    // Notifications Collection
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(notificationId) && isValidNotification(incoming()) &&
+        incoming().id == notificationId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(notificationId) && isValidNotification(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'isRead', 'title', 'message', 'severity', 'syncedAt'
+        ]);
+      allow delete: if isValidId(notificationId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Archive Collection
+    match /archive/{archiveId} {
+      allow get: if isValidId(archiveId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(archiveId) && isValidArchiveItem(incoming()) &&
+        incoming().id == archiveId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(archiveId) && isValidArchiveItem(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'reason', 'description', 'syncedAt'
+        ]);
+      allow delete: if isValidId(archiveId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+
+    // Official Manuals Collection
+    match /officialManuals/{manualId} {
+      allow get: if isValidId(manualId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+      allow list: if isBootstrappedAdmin() || (isVerified() && resource.data.ownerId == request.auth.uid);
+      allow create: if isVerified() && isValidId(manualId) && isValidOfficialManual(incoming()) &&
+        incoming().id == manualId && (isAdmin() || incoming().ownerId == request.auth.uid);
+      allow update: if isVerified() && isValidId(manualId) && isValidOfficialManual(incoming()) &&
+        incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+        (isAdmin() || existing().ownerId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'version', 'title', 'lastUpdated', 'uploadedBy', 'fileType',
+          'fileName', 'fileSize', 'downloadUrl', 'dataUrl', 'isOfficial', 'notes', 'syncedAt'
+        ]);
+      allow delete: if isValidId(manualId) && (isAdmin() || (isVerified() && existing().ownerId == request.auth.uid));
+    }
+  }
+}

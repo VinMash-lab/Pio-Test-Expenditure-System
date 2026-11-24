@@ -1,0 +1,212 @@
+@import "tailwindcss";
+@import "bootstrap-icons/font/bootstrap-icons.css";
+
+:root {
+  --primary-color: #E60000;
+  --primary-hover: #C00000;
+  --secondary-color: #0F172A;
+  --bg-color: #F8FAFC;
+  --card-bg: #FFFFFF;
+  --border-color: #E2E8F0;
+  --text-main: #1E293B;
+  --text-muted: #64748B;
+  --success-color: #10B981;
+  --warning-color: #F59E0B;
+  --danger-color: #EF4444;
+  --font-family: Tahoma, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+[data-bs-theme="dark"], body.dark-mode {
+  --primary-color: #FF3333;
+  --primary-hover: #E60000;
+  --secondary-color: #020617;
+  --bg-color: #0F172A;
+  --card-bg: #1E293B;
+  --border-color: #334155;
+  --text-main: #F8FAFC;
+  --text-muted: #94A3B8;
+  --success-color: #34D399;
+  --warning-color: #FBBF24;
+  --danger-color: #F87171;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  transition: background-color 0.25s ease, color 0.25s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.bg-corporate-primary {
+  background-color: var(--primary-color) !important;
+}
+
+.text-corporate-primary {
+  color: var(--primary-color) !important;
+}
+
+.btn-corporate {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  border: 1px solid transparent;
+  font-weight: 600;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.btn-corporate:hover {
+  background-color: var(--primary-hover);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(230, 0, 0, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-corporate-outline {
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+  background-color: transparent;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-corporate-outline:hover {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.card-erp {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.625rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+}
+
+.card-erp:hover {
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  border-color: rgba(230, 0, 0, 0.2);
+}
+
+.card-erp-stat {
+  border-left: 4px solid var(--primary-color);
+}
+
+/* Sidebar ERP Styling */
+.sidebar-erp {
+  width: 250px;
+  background-color: var(--secondary-color);
+  color: #ffffff;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: calc(100vh - 60px);
+  border-right: 1px solid var(--border-color);
+}
+
+.sidebar-erp.collapsed {
+  width: 70px;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  color: #94A3B8;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.sidebar-nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #F8FAFC;
+}
+
+.sidebar-nav-item.active {
+  background-color: rgba(230, 0, 0, 0.12);
+  color: #FFFFFF;
+  border-left-color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* Top Navbar */
+.top-navbar {
+  height: 60px;
+  background-color: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 1030;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+
+/* Custom Table Styles */
+.table-erp {
+  color: var(--text-main);
+  background-color: var(--card-bg);
+}
+
+.table-erp th {
+  background-color: rgba(15, 23, 42, 0.03);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--border-color);
+}
+
+[data-bs-theme="dark"] .table-erp th {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Row highlight for exceeded budget */
+.tr-budget-exceeded {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  border-left: 4px solid var(--danger-color) !important;
+}
+
+/* Floating Action Button */
+.fab-btn {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  box-shadow: 0 8px 20px rgba(230, 0, 0, 0.35);
+  cursor: pointer;
+  z-index: 1020;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fab-btn:hover {
+  transform: scale(1.08);
+  background-color: var(--primary-hover);
+  box-shadow: 0 12px 24px rgba(230, 0, 0, 0.45);
+}
+
+/* Print Styling */
+@media print {
+  .no-print, .sidebar-erp, .top-navbar, .fab-btn, .btn, .modal {
+    display: none !important;
+  }
+  .main-content-area {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+}
+
